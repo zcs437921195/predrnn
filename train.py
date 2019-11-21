@@ -22,18 +22,18 @@ def train():
     kernel_size = 5
     inputlength = 10
     outputlength = 5
-    channles = 3
+    channles = 1
     img_width = 64
     img_height = 64
     patch_size = 4
     num_layers = 4
     seqlength = inputlength + outputlength
     learning_rate = 0.001
-    epochs = 20000
+    epochs = 30000
     test_interval = 100
-    train_data_paths = '/home/zhouchuansai/data/ECtestdata/test12/ECtrain.npz'
-    valid_data_paths = '/home/zhouchuansai/data/ECtestdata/test12/ECvalid.npz'
-    save_result_path = 'results/test6/'
+    train_data_paths = ''
+    valid_data_paths = ''
+    save_model_path = ''
 
 
     train_input_handle, test_input_handle = datasets_factory.data_provider('mnist', train_data_paths,
@@ -41,7 +41,7 @@ def train():
                                                                            img_width)
     
     # 使用GPU
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '2'
     
     channles = channles * patch_size * patch_size
     img_width = int(img_width / patch_size)
@@ -93,13 +93,14 @@ def train():
 
         with tf.GradientTape() as tape:
             outputs = model([traindata, mask_true_input])
-            loss_value = tf.math.sqrt(3 * 2 * tf.nn.l2_loss(outputs - traindata[:,1:]) / (batch_size*(seqlength-1)*img_width*img_height*channles))
+            loss_value = 2 * tf.nn.l2_loss(outputs - traindata[:,1:]) / (batch_size*(seqlength-1)*img_width*img_height*channles)
         grads = tape.gradient(loss_value, model.trainable_variables)
         optimizer.apply_gradients(zip(grads, model.trainable_variables))
 
         print('itr '+str(itr)+':')
         print('RMSE loss is: ', loss_value.numpy())
 
+        # test
         if itr % test_interval == 0:
             print('-----------test------------')
             test_input_handle.begin(do_shuffle=False)
@@ -107,9 +108,9 @@ def train():
             acc_test, rmse_test = [], []
             rmse_avg = 0
             acc_avg = 0
-            paths = os.path.join(save_result_path, str(itr))
-            if not os.path.exists(paths):
-                os.makedirs(paths)
+            #paths = os.path.join(save_result_path, str(itr))
+            #if not os.path.exists(paths):
+            #    os.makedirs(paths)
             for i in range(outputlength):
                 acc_test.append(0)
                 rmse_test.append(0)
@@ -124,18 +125,18 @@ def train():
                 y_prediction = model([validdata, mask_true_input])
                 y_pred = y_prediction[:, inputlength-1:]
                 
-                y_prediction = patchpro.patchback(y_prediction, patch_size)
-                filename = paths+'/'+str(batch_id)+'_pred.npy'
-                np.save(filename, y_prediction)
+            #    y_prediction = patchpro.patchback(y_prediction, patch_size)
+            #    filename = paths+'/'+str(batch_id)+'_pred.npy'
+            #    np.save(filename, y_prediction)
 
                 for i in range(outputlength):
                     temp = (y_pred[:, i,:,:,0:patch_size*patch_size] - validdata[:, i+inputlength,:,:,0:patch_size*patch_size]).numpy()
-                    rmse = 3 * np.sum(np.square(temp)) / (batch_size*img_width*img_height*channles)
+                    rmse = np.sum(np.square(temp)) / (batch_size*img_width*img_height*channles)
                     rmse = np.sqrt(rmse)
                     rmse_test[i] += rmse
                     rmse_avg += rmse
                     acc = (temp < 2) * (temp > -2)
-                    acc = 3 * np.sum(acc, dtype=float) / (batch_size*img_width*img_height*channles)
+                    acc = np.sum(acc, dtype=float) / (batch_size*img_width*img_height*channles)
                     acc_test[i] += acc
                     acc_avg += acc
 
@@ -149,6 +150,13 @@ def train():
             for i in range(outputlength):
                 print('RMSE '+str(i)+' is: ', rmse_test[i]/batch_id)
                 print('accuracy '+str(i)+' is: ', acc_test[i]/batch_id)
+
+        # save model
+        if itr % 10000 == 0:
+            paths = os.path.join(save_model_path, str(itr))
+            if not os.path.exists(paths):
+                os.makedirs(paths)
+            model.save(paths+'/my_model.h5')
 
         train_input_handle.next()
     
